@@ -36,17 +36,20 @@ def validate_folder(folder: Path) -> tuple[bool, str]:
         return False, f"The folder cannot be accessed: {error}"
 
 
-def scan_folder(folder: Path) -> list[Path]:
-    """Return regular files directly inside folder; do not recurse."""
+def scan_folder(folder: Path, recursive: bool = False) -> list[Path]:
+    """Return regular files, directly inside folder unless recursive is enabled."""
     valid, message = validate_folder(folder)
     if not valid:
         raise ValueError(message)
     try:
+        entries = folder.rglob("*") if recursive else folder.iterdir()
         return sorted(
             (
                 entry.resolve()
-                for entry in folder.iterdir()
-                if entry.is_file() and entry.name != HISTORY_FILENAME
+                for entry in entries
+                if entry.is_file()
+                and entry.name != HISTORY_FILENAME
+                and ".file_organizer_quarantine" not in entry.relative_to(folder).parts
             ),
             key=lambda path: path.name.lower(),
         )

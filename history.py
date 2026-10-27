@@ -29,20 +29,66 @@ def _write(folder: Path, records: list[dict]) -> None:
     )
 
 
-def record_operation(folder: Path, moves: list[tuple[Path, Path]]) -> None:
+def record_operation(
+    folder: Path,
+    moves: list[tuple[Path, Path]],
+    failures: list[tuple[Path, str]] | None = None,
+) -> None:
     """Append successful moves from one operation to the local history file."""
+    records = _read(folder)
+    entries = [
+        {
+            "source": str(source),
+            "destination": str(destination),
+            "status": "completed",
+            "error": None,
+        }
+        for source, destination in moves
+    ]
+    entries.extend(
+        {
+            "source": str(source),
+            "destination": "",
+            "status": "skipped",
+            "error": error,
+        }
+        for source, error in failures or []
+    )
+    records.append(
+        {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "operation": "organize",
+            "status": "completed" if not failures else "partial",
+            "undone": False,
+            "moves": entries,
+        }
+    )
+    _write(folder, records)
+
+
+def record_activity(
+    folder: Path,
+    operation: str,
+    entries: list[dict],
+    status: str = "completed",
+) -> None:
+    """Record a non-undoable operation with per-entry status and errors."""
     records = _read(folder)
     records.append(
         {
             "timestamp": datetime.now(timezone.utc).isoformat(),
-            "undone": False,
-            "moves": [
-                {"source": str(source), "destination": str(destination)}
-                for source, destination in moves
-            ],
+            "operation": operation,
+            "status": status,
+            "undone": True,
+            "moves": entries,
         }
     )
     _write(folder, records)
+
+
+def recent_activity(folder: Path, limit: int = 10) -> list[dict]:
+    """Return the newest activity records first."""
+    return list(reversed(_read(folder)[-limit:]))
 
 
 def undo_latest(folder: Path) -> tuple[int, list[str]]:
@@ -85,5 +131,9 @@ def undo_latest(folder: Path) -> tuple[int, list[str]]:
 
     latest["moves"] = remaining
     latest["undone"] = not remaining
+    latest["status"] = "undone" if not remaining else "partial"
+    for move in latest["moves"]:
+        move["status"] = "not_restored"
+        move["error"] = "Could not safely restore this file."
     _write(folder, records)
     return restored, errors
